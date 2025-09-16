@@ -1,25 +1,19 @@
 # conf/task/blocksworld.yaml
-name: "blocksworld1246"
+name: "blocksworld246"
 data_files:
-  - data/blocksworld/train_set-1-complete-correct.json
-  - data/blocksworld/train_set-2-complete-correct.json
+  # - data/blocksworld/train_set-1-complete.json
+  # - data/blocksworld/train_set-2-complete-correct.json
   - data/blocksworld/train_set-4-complete-correct.json
   - data/blocksworld/train_set-6-complete-correct.json
 icl_examples_file: data/blocksworld/train_set-2-more_with_trace.json
 use_icl_examples: false
 
 training:
-  max_prompt_length: 1600
+  max_prompt_length: 1024
   max_completion_length: 512
 
 inference:
   checkpoint: 1200
-  data_files:
-    - data/blocksworld/split_v1/step_1_data.json
-    - data/blocksworld/split_v1/step_2_data.json
-    - data/blocksworld/split_v1/step_4_data.json
-    - data/blocksworld/split_v1/step_6_data.json
-    - data/blocksworld/split_v1/step_8_data.json
   steps: 4
   temperature: 0.0
   sc_num: 1
@@ -29,9 +23,6 @@ inference:
   data_path: 'data/blocksworld/split_v1/split_v1_step_{steps}_data.json'
   config_file: "data/blocksworld/bw_config.yaml"
   domain_file: "data/blocksworld/generated_domain.pddl"
-  pass_at_k: 1
   num_shot: 4
   resume: 0
   max_new_tokens: 512
-  max_batch_size: 64
-  max_model_len: 1600

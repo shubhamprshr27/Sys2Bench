@@ -449,12 +449,35 @@ class BaseTrainer:
 
 class BlocksWorldTrainer(BaseTrainer):
     """Class for training and inference on blocksworld models"""
+    
+    def _prepare_icl(self):
+        icl_examples = [
+            {
+            "init": "\n\n[Problem]\nHere is the initial state of the blocks: the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the yellow block, the yellow block is on top of the blue block, the blue block is on the table and the orange block is on the table",
+            "goal": "\n\nHere is the goal state of the blocks: the red block is on top of the blue block and the yellow block is on top of the orange block",
+            "think": "\n\n<think> To achieve the goal state I need move the red block and yellow block since they are in different positions in the goal </think> ",
+            "plan": "\n\n<answer>\nunstack the red block from on top of the yellow block\nput down the red block\nunstack the yellow block from on top of the blue block\nstack the yellow block on top of the orange block\npick up the red block\nstack the red block on top of the blue block\n</answer>"
+        },
+        {
+            "init": "\n\n[Problem]\nHere is the initial state of the blocks: the red block is clear, the orange block is clear, the hand is empty, the orange block is on top of the blue block, the red block is on the table and the blue block is on the table",
+            "goal": "\n\nHere is the goal state of the blocks: the red block is on top of the blue block",
+            "think": "\n\n<think> To achieve the goal state I need move the red block and orange block since they are in different positions in the goal </think> ",
+            "plan": "\n\n<answer>\nunstack the orange block from on top of the blue block\nput down the orange block\npick up the red block\nstack the red block on top of the blue block\n</answer>"
+        }
+        ]
+        return "\n\n".join(
+            ex["init"] + ex["goal"] + ex["think"] + ex["plan"]
+            for ex in icl_examples
+        )
 
-    def _prepare_dataset(self):
+    def _prepare_dataset(self, split='train'):
         """Prepare dataset for training"""
         # If a dataset size limit is specified, sample equally from each file
         all_samples = []
-        data_files = self.cfg.task.data_files
+        try:
+            data_files = getattr(self.cfg.task, split).data_files
+        except (AttributeError, KeyError):
+            data_files = self.cfg.task.data_files
         data_schedule = self.cfg.algorithm.training.curriculum_schedule
         for task_idx, file in enumerate(data_files):
             file_dataset = load_dataset('json', data_files=file)['train']
@@ -479,11 +502,14 @@ class BlocksWorldTrainer(BaseTrainer):
 
     def _generate_prompt(self, tokenizer, init, goal, plan="", example_index=0, icl_examples_set=None):
         """Generate prompt for the blocksworld model"""
-        if icl_examples_set is None:
-            icl_example = ""
-        else:
-            icl_example = generate_icl(icl_examples_set, provide_think_icl=True, num_icl=1, idx=example_index)
-
+        # if icl_examples_set is None:
+        #     icl_example = ""
+        # else:
+        #     icl_example = generate_icl(icl_examples_set, provide_think_icl=True, num_icl=1, idx=example_index)
+        icl_example = ""
+        # icl_example = self._prepare_icl()
+        # print(icl_example)
+        # quit()
         messages = [
             {
                 "role": "system",
@@ -560,7 +586,7 @@ class BlocksWorldTrainer(BaseTrainer):
                 completion = "<think>" + completion
                 print(completion)
 
-                if not self._validate_bw_response_format(completion):
+                if not self._validate_bw_response_format(completion) and self.cfg.mode == 'train':
                     print('Response Format Error')
                     rewards.append(0.0)  # Penalty to avoid format errors
                     continue
@@ -764,90 +790,147 @@ class BlocksWorldTrainer(BaseTrainer):
                 # Save checkpoint
                 if epoch % self.cfg.algorithm.training.save_steps == 0:
                     trainer.save_pretrained(f"{trainer.args.output_dir}/checkpoint-{epoch}")
-
+    def sanitize_name(self, raw: str) -> str:
+        if not isinstance(raw, str):
+            return raw
+        return ''.join(c if c.isalnum() else '_' for c in raw).strip('_')
     def inference(self):
         """Run inference using the trained model"""
         # Extract config values
+        """Run inference using the trained model"""
+        log_on_main('\n\n*****\ntest\n*****\n\n')
+
         model_checkpoint = self.cfg.task.inference.checkpoint
-        steps = self.cfg.task.inference.steps
-        temperature = self.cfg.task.inference.temperature
         sc_num = self.cfg.task.inference.sc_num
-        pass_at_k = self.cfg.task.inference.pass_at_k
-        use_icl = self.cfg.task.inference.use_icl
-        prompt_path = self.cfg.task.inference.prompt_path
-        resume = self.cfg.task.inference.resume
-        mode = 'pass' if pass_at_k == 1 else 'majority'
+        sanitized_name = self.sanitize_name(model_checkpoint)
         # Generate checkpoint path
-        model_dir = self._get_checkpoint_path(model_checkpoint)
-        max_batch_size = self.cfg.algorithm.inference.max_batch_size
-        # Setup data path
-        data_path = self.cfg.task.inference.data_path.format(steps=steps)
+        model_dir = self._get_checkpoint_path(model_checkpoint, self.cfg.model.trim)
 
-        # Setup log directory
-        model_name = model_dir.split('/')[-1]
-        log_dir = f'logs/Blocksworld/RL/step_{steps}/{datetime.now().strftime("%m%d%Y-%H%M%S")}_{model_name}_t_{temperature}_sc_{sc_num}'
-
-        # Load prompt
-        with open(prompt_path) as f:
-            prompt = json.load(f)
-
-        # Prepare ICL examples if needed
-        icl = ""
-        if use_icl:
-            with open(self.cfg.task.icl_examples_file) as f:
-                icl_examples = json.load(f)
-            icl = generate_icl(icl_examples, provide_think_icl=True, num_icl=self.cfg.task.inference.icl_num)
-        print(f"ICL examples: {icl}")
-
-        # Load model
-        base_model = HFModel(
-            model_pth=model_dir,
-            tokenizer_pth=model_dir,
-            max_new_tokens=self.cfg.task.inference.max_new_tokens,
-            max_batch_size=max_batch_size
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_dir,
+            trust_remote_code=self.cfg.model.trust_remote_code,
         )
-
-        # Create reasoner
-        reasoner = RLReasoner(
-            base_model,
-            temperature=temperature,
-            sc_num=sc_num,
-            icl_example=icl,
-            pass_at_k=pass_at_k,
+        model = LLM(
+            model=model_dir,
+            trust_remote_code=self.cfg.model.trust_remote_code,
+            tensor_parallel_size=torch.cuda.device_count(),
+            dtype=self.cfg.model.torch_dtype,
+            gpu_memory_utilization=self.cfg.algorithm.training.vllm_gpu_memory_utilization,
+            max_model_len=self.cfg.task.inference.max_model_len,
+            seed=self.cfg.experiment.dataset_seed,
+            task='generate'
         )
-
-        # Setup evaluator
-        evaluator = BWEvaluator(
-            config_file=self.cfg.task.inference.config_file,
-            domain_file=self.cfg.task.inference.domain_file,
-            data_path=data_path,
-            init_prompt=prompt,
-            disable_log=False,
-            output_extractor=lambda x: sc_output_extractor(x, mode=mode),
-            mode=mode,
-            sample_prompt_type="rap"  # rap prompt includes cot
+        sampling_params = SamplingParams(
+            n= 1,#self.cfg.task.inference.n,
+            temperature=0.7,
+            max_tokens=self.cfg.task.inference.max_tokens,
+            min_tokens=1,
+            # seed=self.cfg.experiment.dataset_seed,
+            stop=["</answer>"],
+            top_p=0.9,
+            top_k=50,
+            include_stop_str_in_output=True,
         )
+        
+        # Load and Preprocess Dataset  
+        dataset = self._prepare_dataset(split='inference')
+        dataset = dataset.map(
+            lambda example, idx: self._generate_prompt(
+                tokenizer,
+                example["init"],
+                example["goal"],
+                example["plan"],
+                idx
+            ),
+            with_indices=True
+        )
+        # log_on_main(dataset)
+        # VLLM Generation
+        op_list = []
+        for _ in tqdm(range(256), desc="Generating 256 batches"):
+            outputs = model.generate(dataset['prompt'], sampling_params)
+            op_list.append(outputs)
+        # outputs = model.generate(dataset['prompt'], sampling_params)
+        outputs = [
+            [completion.text for req in batches for completion in req.outputs] 
+            for batches in op_list
+            
+        ]
+        outputs = np.array(outputs).T.tolist()
+        dataset = dataset.select([idx for idx in range(len(dataset['prompt']))])
+        dataset = dataset.add_column('output', outputs)
 
-        # Run evaluation
-        accuracy = evaluator.batched_evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir, batch_size=max_batch_size)
+        # Calcuate Rewards
+        reward_fn = self._blocksworld_reward_fn
 
-        print(f'Accuracy: {accuracy}')
+        rewards = [
+                self._blocksworld_reward_fn(
+                    completions=outs,                    # List[str] of length n
+                    plan=[dataset['plan'][i]] * len(outs),
+                    init=[dataset['init'][i]] * len(outs),
+                    goal=[dataset['goal'][i]] * len(outs),
+                )
+                for i, outs in enumerate(outputs)
+            ]
+        # print(rewards, len(rewards))
+        dataset = dataset.add_column('reward', rewards)
+        dataset.to_json(os.path.join(str(self.output_dir), f'{sanitized_name}_outputs_bw.jsonl'))
 
-        # Save results to output directory
-        results = {
-            "accuracy": accuracy,
-            "model_checkpoint": model_checkpoint,
-            "steps": steps,
-            "temperature": temperature,
-            "sc_num": sc_num,
-            "use_icl": use_icl,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Process Metrics
+        results = dict()
+        num_prompts = len(rewards)
+        n = len(rewards[0])
+        results['overall'] = {
+            'avg_reward': (
+                sum(sum(row) for row in rewards)
+                / (num_prompts * n)
+            ) if num_prompts * n else 0.0,
+
+            # pass@n: fraction of rows where any reward > 2.0
+            f'pass@{n}': (
+                sum(any(r > 2.0 for r in row) for row in rewards)
+                / num_prompts
+            ) if num_prompts else 0.0,
+
+            'support': num_prompts
         }
+        data_files = getattr(self.cfg.task, 'inference').data_files
+        for task_idx, data_dir in enumerate(data_files):
+            basename = os.path.basename(os.path.normpath(data_dir))
+            rewards_list = [
+                ex['reward']
+                for ex in dataset
+                if ex['task'] == task_idx
+            ]
+            support = len(rewards_list)
+            print('len of rewards', support)
+            total_sum = sum(sum(grp) for grp in rewards_list)
+            avg_reward = (total_sum / (support * n)) if num_prompts else 0.0
+            # compute avg and pass@1 (accuracy) with comprehensions
+            
+            max_pow   = int(math.log2(n)) if n else 0
+            pass_curve = {
+                1 << i: (
+                    sum(any(r > 2.0 for r in grp[: (1 << i)]) for grp in rewards_list)
+                    / support
+                ) if support else 0.0
+                for i in range(max_pow + 1)
+            }
+            
 
-        with open(self.output_dir / "inference_results.json", "w") as f:
-            json.dump(results, f, indent=2)
+            results[basename] = {
+                'avg_reward': avg_reward,
+                'pass_curve':   pass_curve,
+                f'pass@{n}':  pass_curve.get(n, 0.0),
+                'support':    support,
+            }
 
-        return accuracy
+        log_on_main(json.dumps(results, indent=4))
+        with open(os.path.join(str(self.output_dir), f'{sanitized_name}.json'), "w") as f:
+            json.dump(results, f, indent=4)
+
+        if torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
 
 
 class CountdownTrainer(BaseTrainer):
@@ -1483,6 +1566,11 @@ class ArithmeticTrainer(BaseTrainer):
             model_config.model_name_or_path,
             trust_remote_code=model_config.trust_remote_code
         )
+        # Ensure we have a pad_token
+        if tokenizer.pad_token is None:
+            # Option A: alias EOS → PAD
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
         model = AutoModelForCausalLM.from_pretrained(
             model_config.model_name_or_path,
             torch_dtype=model_config.torch_dtype,

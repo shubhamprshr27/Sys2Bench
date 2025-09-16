@@ -228,7 +228,7 @@ class BWEvaluator(Evaluator):
     
 if __name__ == "__main__":
     config_file: str = "data/blocksworld/bw_config.yaml"
-    steps = 1
+    steps =8
     domain_file: str = "data/blocksworld/generated_domain.pddl"
     data_path=f'data/blocksworld/split_v1/split_v1_step_{steps}_data.json'
     prompt_path='prompts/blocksworld/pool_prompt_v1.json'
@@ -253,24 +253,28 @@ if __name__ == "__main__":
                             sample_prompt_type="rap")
     dataset =evaluator.full_dataset
     print("Dataset length: ", len(dataset))
-    train_set = []
-    for i in range(len(dataset)):
-        init = dataset[i]['init']
-        goal = dataset[i]['goal']
-        plan = dataset[i]['plan']
-        instance_file = dataset[i]['instance_file'] 
-        aug_data = generate_augmentations(init, goal, plan, num_augmentations=15)
-        for key in aug_data.keys():
-            for aug in aug_data[key]:
-                training_instance = {}
-                training_instance['init'] = aug['init']
-                training_instance['goal'] = aug['goal']
-                training_instance['plan'] = aug['plan']
-                training_instance['instance_file'] = instance_file
-                training_instance['augmentation_type'] = key
-                training_instance['mapping'] = aug['mapping']
-                train_set.append(training_instance)
-    print('Dataset Length', len(train_set))
-    with open(f'data/blocksworld/train_set-{steps}-more.json', 'w') as f:
-        json.dump(train_set, f, indent=4)
+    with open(f'data/blocksworld/split_v1/split_v1_step_{steps}_data-test.json', 'w') as f:
+        json.dump(dataset, f, indent=4)
+        
+    
+    # train_set = []
+    # for i in range(len(dataset)):
+    #     init = dataset[i]['init']
+    #     goal = dataset[i]['goal']
+    #     plan = dataset[i]['plan']
+    #     instance_file = dataset[i]['instance_file'] 
+    #     aug_data = generate_augmentations(init, goal, plan, num_augmentations=15)
+    #     for key in aug_data.keys():
+    #         for aug in aug_data[key]:
+    #             training_instance = {}
+    #             training_instance['init'] = aug['init']
+    #             training_instance['goal'] = aug['goal']
+    #             training_instance['plan'] = aug['plan']
+    #             training_instance['instance_file'] = instance_file
+    #             training_instance['augmentation_type'] = key
+    #             training_instance['mapping'] = aug['mapping']
+    #             train_set.append(training_instance)
+    # print('Dataset Length', len(train_set))
+    # with open(f'data/blocksworld/train_set-{steps}-more.json', 'w') as f:
+    #     json.dump(train_set, f, indent=4)
     

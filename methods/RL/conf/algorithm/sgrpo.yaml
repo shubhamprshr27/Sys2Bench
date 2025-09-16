@@ -5,8 +5,8 @@ training:
   learning_rate: 1e-6
   lr_scheduler_type: "cosine"
   logging_steps: 10
-  max_steps: 300
-  curriculum: true
+  max_steps: 1200
+  curriculum: false
   curriculum_schedule: "gaussian" # balanced in default, gaussian, cosine or classic
   scheduler_params:
     mu_exp: 0.5
@@ -18,8 +18,8 @@ training:
   bf16: true
   num_generations: 8
   beta: 0.001
-  use_vllm: true
-  vllm_gpu_memory_utilization: 0.2
+  use_vllm: false
+  vllm_gpu_memory_utilization: 0.3
   report_to:
     - wandb
   push_to_hub: true

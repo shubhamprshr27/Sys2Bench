@@ -1,0 +1,28 @@
+# conf/task/blocksworld.yaml
+name: "math"
+data_files:
+  # - data/aime24
+  # - data/college_math
+  - data/math500
+  # - data/olympiadbench
+  # - data/math/level_2
+  # - data/math/level_3
+  # - data/math/level_4
+  # - data/math/level_5
+
+training:
+  max_prompt_length: 1600
+  max_completion_length: 1600
+
+inference:
+  max_model_len: 3200
+  checkpoint: outputs/Qwen2.5-3B-Instruct_math_sgrpo_gaussian_0.5_0.5_True_1200/checkpoint-1200
+  temperature: 0.0
+  sc_num: 1
+  use_icl: false
+  icl_num: 2
+  num_shot: 4
+  resume: 0
+  max_new_tokens: 1600
+  max_tokens: 1600
+  n: 1
