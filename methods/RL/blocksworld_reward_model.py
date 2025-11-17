@@ -107,19 +107,19 @@ class BlocksWorldModel:
         # print(action_str)
         patterns = [
             (
-                r"^unstack the (\w+) block from on top of the (\w+) block$",
+                r"^unstack the (\w+) block from on top of the (\w+) block[^\w\s]*\s*$",
                 lambda m: ("unstack", cls.normalize_block_name(m.group(1)), cls.normalize_block_name(m.group(2)))
             ),
             (
-                r"^pick up the (\w+) block$",
+                r"^pick up the (\w+) block[^\w\s]*\s*$",
                 lambda m: ("pickup", cls.normalize_block_name(m.group(1)))
             ),
             (
-                r"^stack the (\w+) block on top of the (\w+) block$",
+                r"^stack the (\w+) block on top of the (\w+) block[^\w\s]*\s*$",
                 lambda m: ("stack", cls.normalize_block_name(m.group(1)), cls.normalize_block_name(m.group(2)))
             ),
             (
-                r"^put down the (\w+) block$",
+                r"^put down the (\w+) block[^\w\s]*\s*$",
                 lambda m: ("putdown", cls.normalize_block_name(m.group(1)))
             ),
         ]
@@ -128,30 +128,6 @@ class BlocksWorldModel:
             if m:
                 return action_fn(m)
         raise ValueError("Action not recognized or unsupported.")
-
-    @classmethod
-    def parse_goal(cls, goal_str: str):
-        """
-        Parses the goal string into a dictionary mapping each normalized block
-        to its expected location.
-        Supports "is on top of" and "is on the table" relations.
-        """
-        goal_str = cls.normalize_input_string(goal_str)
-        goal_str = goal_str.replace(" and ", ", ")
-        facts = [fact.strip() for fact in goal_str.split(",")]
-        goal_dict = {}
-        for fact in facts:
-            m = re.match(r"the (.+?)(?: block)? is on top of the (.+?)(?: block)?$", fact, re.IGNORECASE)
-            if m:
-                block = cls.normalize_block_name(m.group(1))
-                support = cls.normalize_block_name(m.group(2))
-                goal_dict[block] = support
-            else:
-                m = re.match(r"the (.+?)(?: block)? is on the table$", fact, re.IGNORECASE)
-                if m:
-                    block = cls.normalize_block_name(m.group(1))
-                    goal_dict[block] = "table"
-        return goal_dict
 
     # --- Simulation Functions ---
     @staticmethod
@@ -279,65 +255,6 @@ class BlocksWorldModel:
         """
         return self.states_equal(state, self.goal)
 
-    def test(self):
-        """
-        Runs the plan starting from the initial state, then checks if the final state meets the goal.
-        Returns a tuple: (final_state_str, goal_reached, missing_conditions).
-        """
-        state = self.simulate_plan()
-        goal_reached, missing_conditions = self.check_goal(state)
-        return state, goal_reached, missing_conditions
-
-    # --- Reward-based Simulation for RL ---
-    def get_number_of_steps(self, plan):
-        return sum(1 for line in plan.strip().splitlines() if line.strip() and "[plan end]" not in line.lower())
-    
-    def simulate_plan_with_reward_1(self, true_plan: str):
-        """
-        Simulates the plan step by step. If any action is physically unachievable,
-        returns a reward of 0. If all actions are valid but the goal is not reached,
-        returns a reward of 0.1. If the final state meets the goal, returns a reward of 1.
-        """
-        print('---- Simulating Plan Rewards ----')
-        if len(self.plan.strip().split("\n")) == 0:
-            print('Empty plan.')
-            return 0.0
-        num_steps_extracted_plan = self.get_number_of_steps(self.plan)
-        num_steps_true_plan = self.get_number_of_steps(true_plan)
-            
-            # Since number of steps cannot be less than the true plan, the BW reward is 0.0.
-        print(f"Number of steps extracted: {num_steps_extracted_plan}, true: {num_steps_true_plan}")
-        if num_steps_extracted_plan < num_steps_true_plan:
-            print(f"ERROR ---Number of steps mismatch!----")
-            return 0.0
-        
-        try:
-            lines = [line.replace('<', '').replace('>', '').strip() for line in self.plan.strip().split("\n")
-                     if line.strip() and "[plan end]" not in line.lower()]
-            print(lines)
-            curr_state = self.init_state
-            for action_line in lines:
-                curr_state = self.simulate_step(curr_state, action_line)
-        except ValueError as ve:
-            print(f'Invalid Action - {ve}')
-            return 0.0
-        except Exception as e:
-            print(f'Physically Impossible Action - {e}')
-            return 0.1
-        # If actions were valid, check the goal.
-        goal_reached, _ = self.check_goal(curr_state)
-        if goal_reached and num_steps_extracted_plan == num_steps_true_plan:
-            print('Goal Reached! Optimal Plan!')
-            return 2.0 # Goal reached with the right number of steps
-        elif goal_reached and num_steps_extracted_plan > num_steps_true_plan:
-            print(f'Goal Reached! Suboptimal Plan! True Plan: {num_steps_true_plan}, Extracted Plan: {num_steps_extracted_plan}')
-            return 1.0 # Goal reached with more steps
-        elif not goal_reached and num_steps_extracted_plan == num_steps_true_plan:
-            print(f'Goal Not Reached. Correct Number of Steps. True Plan: {num_steps_true_plan}, Extracted Plan: {num_steps_extracted_plan}')
-            return 0.5 # Goal not reached with the right number of steps
-        elif not goal_reached and num_steps_extracted_plan > num_steps_true_plan:
-            print(f'Goal Not Reached. Incorrect Number of Steps. True Plan: {num_steps_true_plan}, Extracted Plan: {num_steps_extracted_plan}')
-            return 0.3 # Goal not reached with more steps
         
     def simulate_plan_with_reward(self, true_plan: str) -> float:
         """
@@ -366,9 +283,6 @@ class BlocksWorldModel:
             print("Empty plan.")
             return 0.0
         parsed_goal = self.simulate_plan(true_plan)
-        # Parse the goal state using the same parsing function.
-        # print(self.parse_goal)
-        # print(parsed_goal)
         goal_state, goal_hand, _ = self.parse_initial_state(parsed_goal)
         goal_set = {(block, loc) for block, loc in goal_state.items()}
 
@@ -406,41 +320,6 @@ class BlocksWorldModel:
         final_reward = float(last_iou == 1.0) * (1 + norm_factor)
         print(f"Final reward: {final_reward}")
         return final_reward
-
-    @classmethod
-    def test_from_json(cls, json_file: str):
-        """
-        Loads a JSON file containing a list of problems.
-        Each problem must have keys "init", "goal", and "plan".
-        The method loops over the problems, tests the plan, prints results for each,
-        and prints the overall accuracy (i.e. how many times the goal was reached).
-        """
-        with open(json_file, "r") as f:
-            problems = json.load(f)
-        total = len(problems)
-        correct = 0
-        for i, prob in enumerate(problems, start=1):
-            init_str = prob.get("init", "")
-            goal_str = prob.get("goal", "")
-            plan_str = prob.get("plan", "")
-            instance = cls(init_str, goal_str, plan_str)
-            final_state_str, reached, missing = instance.test()
-            if reached:
-                correct += 1
-            print(f"--- Problem {i} ---")
-            print("Initial State:", init_str)
-            print("Plan:\n", plan_str)
-            print("Goal:", goal_str)
-            print("Final State:", final_state_str)
-            print("Goal Reached?", reached)
-            if not reached:
-                print("Missing Conditions:", missing)
-            # Also print the reward as computed by our RL reward model.
-            reward = instance.simulate_plan_with_reward()
-            print("Reward:", reward)
-            print("\n" + "="*50 + "\n")
-        accuracy = (correct / total * 100) if total > 0 else 0
-        print(f"Accuracy: {accuracy:.2f}% ({correct} out of {total} problems reached the goal)")
     
     @classmethod
     def simplify_state_given_reference(cls, reference_state_str: str, final_state_str: str) -> str:

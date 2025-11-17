@@ -4,7 +4,8 @@ from typing import Dict, List
 import datasets
 import re
 import signal
-
+# import sympy
+# from sympy.parsing.latex import parse_latex
 # try:
     
 
@@ -29,10 +30,14 @@ def doc_to_text(doc: dict) -> str:
 
 def process_docs(dataset: datasets.Dataset) -> datasets.Dataset:
     def _process_doc(doc: dict) -> dict:
+        if 'answer' in doc:
+            answer = doc["answer"]
+        else:
+            answer = remove_boxed(last_boxed_only_string(doc['solution']))
         out_doc = {
             "problem": doc["problem"],
             "solution": doc["solution"],
-            "answer": remove_boxed(last_boxed_only_string(doc["solution"])),
+            "answer": answer,
         }
         if getattr(doc, "few_shot", None) is not None:
             out_doc["few_shot"] = True
@@ -75,11 +80,11 @@ def process_result_v1(extracted_answer:str, answer:str) -> bool:
     llm_answer = normalize_final_answer(extracted_answer)
     normalized_gold = normalize_final_answer(answer)
     if llm_answer == INVALID_ANSWER:
-        return False
+        return 0.1
     if llm_answer.strip() == normalized_gold.strip() or is_equiv(llm_answer, normalized_gold):
-        return True
+        return 1.0
     else:
-        return False
+        return 0.1
 
 
 def last_boxed_only_string(string: str) -> str:
@@ -182,7 +187,7 @@ def is_equiv(x1: str, x2: str) -> bool:
         return False
     except ImportError as e:
         eval_logger.error(e)
-        raise
+        return False
     except Exception as e:
         eval_logger.debug(f"Failed comparing {x1} and {x2} with {e}")
         return False

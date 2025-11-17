@@ -1,0 +1,317 @@
+[
+    {
+        "init": "the blue block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the orange block, the orange block is on top of the red block, the red block is on the table and the yellow block is on the table",
+        "goal": "the blue block is on top of the yellow block",
+        "plan": "\nunstack the blue block from on top of the orange block\nstack the blue block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the orange block, the orange block is on top of the red block, the red block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-41.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the yellow block, the yellow block is on top of the blue block, the blue block is on the table and the orange block is on the table",
+        "goal": "the red block is on top of the orange block",
+        "plan": "\nunstack the red block from on top of the yellow block\nstack the red block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the yellow block, the yellow block is on top of the blue block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-123.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table and the orange block is on the table",
+        "goal": "the orange block is on top of the blue block",
+        "plan": "\npick up the orange block\nstack the orange block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-86.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table",
+        "goal": "the orange block is on top of the red block",
+        "plan": "\npick up the orange block\nstack the orange block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-93.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the blue block, the orange block is on top of the yellow block, the blue block is on the table and the yellow block is on the table",
+        "goal": "the orange block is on top of the red block",
+        "plan": "\nunstack the orange block from on top of the yellow block\nstack the orange block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the blue block, the orange block is on top of the yellow block, the blue block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-252.pddl"
+    },
+    {
+        "init": "the red block is clear, the yellow block is clear, the hand is empty, the orange block is on top of the blue block, the yellow block is on top of the orange block, the red block is on the table and the blue block is on the table",
+        "goal": "the red block is on top of the yellow block",
+        "plan": "\npick up the red block\nstack the red block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the yellow block is clear, the hand is empty, the orange block is on top of the blue block, the yellow block is on top of the orange block, the red block is on the table and the blue block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-142.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the red block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-20.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the yellow block is on top of the red block, the red block is on the table, the blue block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the yellow block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the yellow block is on top of the red block, the red block is on the table, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-79.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the blue block, the orange block is on top of the yellow block, the blue block is on the table and the yellow block is on the table",
+        "goal": "the orange block is on top of the red block",
+        "plan": "\nunstack the orange block from on top of the yellow block\nstack the orange block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the blue block, the orange block is on top of the yellow block, the blue block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-430.pddl"
+    },
+    {
+        "init": "the orange block is clear, the yellow block is clear, the hand is empty, the red block is on top of the blue block, the yellow block is on top of the red block, the blue block is on the table and the orange block is on the table",
+        "goal": "the orange block is on top of the yellow block",
+        "plan": "\npick up the orange block\nstack the orange block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the orange block is clear, the yellow block is clear, the hand is empty, the red block is on top of the blue block, the yellow block is on top of the red block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-233.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the red block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-83.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the orange block is on top of the blue block, the red block is on the table, the blue block is on the table and the yellow block is on the table",
+        "goal": "the yellow block is on top of the red block",
+        "plan": "\npick up the yellow block\nstack the yellow block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the orange block is on top of the blue block, the red block is on the table, the blue block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-71.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the red block, the red block is on the table and the blue block is on the table",
+        "goal": "the blue block is on top of the orange block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the red block, the red block is on the table and the blue block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-73.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table and the orange block is on the table",
+        "goal": "the orange block is on top of the blue block",
+        "plan": "\npick up the orange block\nstack the orange block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-41.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the orange block is on top of the yellow block, the blue block is on the table and the yellow block is on the table",
+        "goal": "the red block is on top of the blue block",
+        "plan": "\nunstack the red block from on top of the orange block\nstack the red block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the orange block is on top of the yellow block, the blue block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-273.pddl"
+    },
+    {
+        "init": "the blue block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on top of the red block, the orange block is on the table and the yellow block is on the table",
+        "goal": "the yellow block is on top of the blue block",
+        "plan": "\npick up the yellow block\nstack the yellow block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on top of the red block, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-34.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the blue block is on top of the yellow block, the yellow block is on top of the white block, the white block is on top of the orange block, the red block is on the table and the orange block is on the table",
+        "goal": "the red block is on top of the blue block",
+        "plan": "\npick up the red block\nstack the red block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the blue block is on top of the yellow block, the yellow block is on top of the white block, the white block is on top of the orange block, the red block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-495.pddl"
+    },
+    {
+        "init": "the red block is clear, the yellow block is clear, the hand is empty, the orange block is on top of the blue block, the yellow block is on top of the orange block, the red block is on the table and the blue block is on the table",
+        "goal": "the yellow block is on top of the red block",
+        "plan": "\nunstack the yellow block from on top of the orange block\nstack the yellow block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the yellow block is clear, the hand is empty, the orange block is on top of the blue block, the yellow block is on top of the orange block, the red block is on the table and the blue block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-192.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the yellow block, the red block is on the table, the orange block is on the table and the yellow block is on the table",
+        "goal": "the orange block is on top of the red block",
+        "plan": "\npick up the orange block\nstack the orange block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the yellow block, the red block is on the table, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-164.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the yellow block, the orange block is on top of the red block, the red block is on the table and the yellow block is on the table",
+        "goal": "the blue block is on top of the orange block",
+        "plan": "\nunstack the blue block from on top of the yellow block\nstack the blue block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the yellow block, the orange block is on top of the red block, the red block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-46.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the hand is empty, the orange block is on top of the blue block, the red block is on the table and the blue block is on the table",
+        "goal": "the red block is on top of the orange block",
+        "plan": "\npick up the red block\nstack the red block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the hand is empty, the orange block is on top of the blue block, the red block is on the table and the blue block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-45.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the yellow block, the red block is on the table, the blue block is on the table and the yellow block is on the table",
+        "goal": "the orange block is on top of the blue block",
+        "plan": "\nunstack the orange block from on top of the yellow block\nstack the orange block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the yellow block, the red block is on the table, the blue block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-396.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table, the orange block is on the table and the yellow block is on the table",
+        "goal": "the yellow block is on top of the blue block",
+        "plan": "\npick up the yellow block\nstack the yellow block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-170.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the yellow block is on top of the red block, the red block is on the table, the blue block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the orange block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the yellow block is on top of the red block, the red block is on the table, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-149.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the orange block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-77.pddl"
+    },
+    {
+        "init": "the orange block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the red block, the orange block is on top of the blue block, the red block is on the table and the yellow block is on the table",
+        "goal": "the yellow block is on top of the orange block",
+        "plan": "\npick up the yellow block\nstack the yellow block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the orange block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the red block, the orange block is on top of the blue block, the red block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-5.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table, the orange block is on the table and the yellow block is on the table",
+        "goal": "the yellow block is on top of the blue block",
+        "plan": "\npick up the yellow block\nstack the yellow block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-312.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the blue block is on top of the orange block, the red block is on the table and the orange block is on the table",
+        "goal": "the red block is on top of the blue block",
+        "plan": "\npick up the red block\nstack the red block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the blue block is on top of the orange block, the red block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-48.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the red block, the red block is on the table and the blue block is on the table",
+        "goal": "the orange block is on top of the blue block",
+        "plan": "\nunstack the orange block from on top of the red block\nstack the orange block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the red block, the red block is on the table and the blue block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-36.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the red block is on top of the blue block, the blue block is on the table, the orange block is on the table and the yellow block is on the table",
+        "goal": "the orange block is on top of the red block",
+        "plan": "\npick up the orange block\nstack the orange block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the yellow block is clear, the hand is empty, the red block is on top of the blue block, the blue block is on the table, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-124.pddl"
+    },
+    {
+        "init": "the red block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the yellow block is on top of the blue block, the blue block is on the table and the orange block is on the table",
+        "goal": "the red block is on top of the yellow block",
+        "plan": "\nunstack the red block from on top of the orange block\nstack the red block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the yellow block is on top of the blue block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-378.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the red block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-89.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the blue block, the blue block is on the table and the orange block is on the table",
+        "goal": "the orange block is on top of the red block",
+        "plan": "\npick up the orange block\nstack the orange block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the blue block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-33.pddl"
+    },
+    {
+        "init": "the orange block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the red block, the orange block is on top of the blue block, the red block is on the table and the yellow block is on the table",
+        "goal": "the orange block is on top of the yellow block",
+        "plan": "\nunstack the orange block from on top of the blue block\nstack the orange block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the orange block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the red block, the orange block is on top of the blue block, the red block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-70.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the orange block, the red block is on the table, the orange block is on the table and the yellow block is on the table",
+        "goal": "the red block is on top of the yellow block",
+        "plan": "\npick up the red block\nstack the red block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the orange block, the red block is on the table, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-223.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the blue block is on top of the orange block, the red block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the red block",
+        "plan": "\nunstack the blue block from on top of the orange block\nstack the blue block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the blue block is on top of the orange block, the red block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-92.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table",
+        "goal": "the red block is on top of the orange block",
+        "plan": "\npick up the red block\nstack the red block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the orange block is clear, the hand is empty, the red block is on the table, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-8.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the orange block",
+        "plan": "\nunstack the blue block from on top of the red block\nstack the blue block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the hand is empty, the blue block is on top of the red block, the red block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-96.pddl"
+    },
+    {
+        "init": "the blue block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the yellow block is on top of the red block, the blue block is on the table and the orange block is on the table",
+        "goal": "the blue block is on top of the yellow block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the yellow block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the yellow block is clear, the hand is empty, the red block is on top of the orange block, the yellow block is on top of the red block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-21.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table and the orange block is on the table",
+        "goal": "the red block is on top of the blue block",
+        "plan": "\nunstack the red block from on top of the orange block\nstack the red block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on the table and the orange block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-47.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on top of the yellow block, the orange block is on the table and the yellow block is on the table",
+        "goal": "the red block is on top of the blue block",
+        "plan": "\nunstack the red block from on top of the orange block\nstack the red block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on top of the yellow block, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-362.pddl"
+    },
+    {
+        "init": "the blue block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the orange block, the orange block is on top of the red block, the red block is on the table and the yellow block is on the table",
+        "goal": "the yellow block is on top of the blue block",
+        "plan": "\npick up the yellow block\nstack the yellow block on top of the blue block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the yellow block is clear, the hand is empty, the blue block is on top of the orange block, the orange block is on top of the red block, the red block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-161.pddl"
+    },
+    {
+        "init": "the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the red block, the red block is on the table and the blue block is on the table",
+        "goal": "the blue block is on top of the orange block",
+        "plan": "\npick up the blue block\nstack the blue block on top of the orange block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the blue block is clear, the orange block is clear, the hand is empty, the orange block is on top of the red block, the red block is on the table and the blue block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic_3/instance-100.pddl"
+    },
+    {
+        "init": "the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on top of the yellow block, the orange block is on the table and the yellow block is on the table",
+        "goal": "the blue block is on top of the red block",
+        "plan": "\nunstack the blue block from on top of the yellow block\nstack the blue block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the blue block is clear, the hand is empty, the red block is on top of the orange block, the blue block is on top of the yellow block, the orange block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-31.pddl"
+    },
+    {
+        "init": "the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the yellow block, the orange block is on top of the blue block, the blue block is on the table and the yellow block is on the table",
+        "goal": "the orange block is on top of the red block",
+        "plan": "\nunstack the orange block from on top of the blue block\nstack the orange block on top of the red block\n\n",
+        "question": "\n[STATEMENT]\nAs initial conditions I have that, the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the yellow block, the orange block is on top of the blue block, the blue block is on the table and the yellow block is on the table.\n\nMy plan is as follows:\n\n[PLAN]\n",
+        "instance_file": "LLMs-Planning/llm_planning_analysis/instances/blocksworld/generated_basic/instance-426.pddl"
+    }
+]

@@ -1,7 +1,17 @@
 import os
 import sys
 from typing import Union, TypedDict, List
-
+from typing import Any, Union
+from trl.trainer.utils import pad
+from contextlib import nullcontext
+from trl.trainer.grpo_trainer import nanstd
+from trl.models import unwrap_model_for_generation
+from trl.extras.profiling import profiling_context
+from vllm.sampling_params import GuidedDecodingParams
+from accelerate.utils import gather_object, broadcast_object_list
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from trl.data_utils import maybe_apply_chat_template, is_conversational
+import re
 import pandas as pd
 
 # Fix VLLM compatibility issue - force V0 engine before importing VLLM
@@ -46,7 +56,7 @@ from vllm import LLM, SamplingParams
 from coding_reward_model import CodingRewardModel
 # For Variance Regularized Scheduler
 from methods.RL.schedulers.variance_regularized_scheduler import _variance_regularized_schedule, update_variance_regularized_performance_v2, reset_variance_regularized_state
-
+import torch.distributed as dist
 log = logging.getLogger(__name__)
 OmegaConf.register_new_resolver("d2s", lambda digit, sub: str(digit).replace(".", "_"))
 OmegaConf.register_new_resolver("mode2name", lambda mode, sub1, sub2: sub1 if mode == "train" else sub2)
@@ -59,7 +69,7 @@ def log_on_main(text):
         log.info(text)
 
 class TaskSampler(torch.utils.data.Sampler):
-    def __init__(self, dataset, num_tasks, total_iterations, data_schedule, batch_size, mini_repeat_count, repeat_count, scheduler_params, seed=0, trainer=None):
+    def __init__(self, dataset, num_tasks, total_iterations, data_schedule, batch_size, mini_repeat_count, repeat_count, scheduler_params, resample_size, seed=0, trainer=None):
         """
         Args:
           dataset: a HF dataset; each sample is assumed to be a dict including "task" (an integer 0 to num_tasks-1)
@@ -77,11 +87,11 @@ class TaskSampler(torch.utils.data.Sampler):
         self.total_iterations = total_iterations
         self.data_schedule = data_schedule
         self.trainer = trainer
-        self.rng = np.random.default_rng(seed)
-        task_col = np.array(self.dataset['task'])
+        self.rng = np.random.default_rng(int(seed))
+        task_col = np.asarray(self.dataset['task'])
         self.indices_by_task = {
             t: self.rng.permutation(np.where(task_col == t)[0])
-            for t in range(num_tasks)
+            for t in range(self.num_tasks)
         }
         self.schedule_funcs = {
             'balanced': self._balanced_schedule,
@@ -92,6 +102,9 @@ class TaskSampler(torch.utils.data.Sampler):
         }
         log_on_main(f"Data Schedule: {data_schedule}")
         self.schedule_func = self.schedule_funcs[data_schedule]
+        self.resample_size = resample_size
+        self.task_ptrs = {t: 0 for t in range(self.num_tasks)}
+        self.current_iteration = None
     
     # Classical Curriculum Learning
     @staticmethod    
@@ -100,43 +113,30 @@ class TaskSampler(torch.utils.data.Sampler):
         return dict(enumerate(np.eye(num_tasks)[active_task].tolist()))
 
     def __iter__(self):
-        task_ptrs = {t: 0 for t in range(self.num_tasks)}
+        
         indices_by_task = {t: idx.copy() for t, idx in self.indices_by_task.items()}
         
         # Don't reset variance regularized state here - it's done once in trainer init
         
         for i in range(self.total_iterations):
+            self.current_iteration = i
             probs_dict = self.schedule_func(i, self.total_iterations, self.num_tasks)
-            
-            # Debug print for variance regularized scheduler
-            # if self.data_schedule == 'vrex' and i % 100 == 0:
-            log_on_main(f"[VREx Sampler DEBUG] Iteration {i}: Schedule func returned: {probs_dict}")
-
+            print(f"[VREx Sampler DEBUG] Iteration {i}: Schedule func returned: {probs_dict}")
             probs = np.array([probs_dict[j] for j in range(self.num_tasks)])
             # Sample a task for each slot in the batch using the probabilities.
-            chosen_tasks = np.random.choice(np.arange(self.num_tasks), size=self.batch_size, p=probs, replace=True)
+            chosen_tasks = self.rng.choice(np.arange(self.num_tasks), size=self.batch_size, p=probs, replace=True)
+            # if rank == 0:
             batch_indices = []
 
-            for task in chosen_tasks:
-                indices = self.indices_by_task[task]
-                ptr = task_ptrs[task]
-                if ptr >= len(indices):
-                    # Once exhausted, reshuffle that task’s pool
-                    indices = self.rng.permutation(indices)
-                    indices_by_task[task] = indices
-                    ptr = 0
-                batch_indices.append(int(indices[ptr]))
-                task_ptrs[task] = ptr + 1
-                # if len(indices) == 0:
-                #     idx = random.randrange(len(self.dataset))
-                # else:
-                #     idx = random.choice(indices)
-                # batch_indices.append(int(idx))
-            # Store for variance regularized scheduler
+            for t in chosen_tasks:
+                bucket = self.indices_by_task[int(t)]
+                p = self.task_ptrs[int(t)] % len(bucket)  # wrap
+                batch_indices.append(int(bucket[p]))
+                self.task_ptrs[int(t)] += 1
+            
             self.last_batch_indices = batch_indices
             self.last_chosen_tasks = chosen_tasks
             
-            log_on_main(f"Iteration {i}: Batch indices: {batch_indices}: Task Difficulties: {chosen_tasks}")
             for _ in range(self.repeat_count):
                 for index in batch_indices:
                     for _ in range(self.mini_repeat_count):
@@ -184,6 +184,31 @@ class TaskSampler(torch.utils.data.Sampler):
         
         # Mix with uniform floor to guarantee each probability is at least p_min.
         return {i: p_min + (1 - num_tasks * p_min) * q_i for i, q_i in enumerate(q)}
+    
+    def _draw_group_indices(self, n_groups: int) -> list[int]:
+        """Draw n_groups dataset indices using the curriculum at current_iteration."""
+        probs_dict = self.schedule_func(self.current_iteration, self.total_iterations, self.num_tasks)
+        probs = np.array([probs_dict[j] for j in range(self.num_tasks)], dtype=np.float64)
+        probs /= probs.sum()
+        chosen_tasks = self.rng.choice(np.arange(self.num_tasks), size=int(n_groups), p=probs, replace=True)
+        print(f'Dapo Resample Chosen Tasks: {chosen_tasks} - iteration: {self.current_iteration}')
+        picked = []
+        for t in chosen_tasks:
+            bucket = self.indices_by_task[int(t)]
+            p = self.task_ptrs[int(t)] % len(bucket)   # rolling pointer so we don’t repeat same rows
+            picked.append(int(bucket[p]))
+            self.task_ptrs[int(t)] += 1
+        return picked
+    
+    def resample(self, k = None) -> list[int]:
+        """
+        Redraw EXACTLY n_groups prompt indices for this same curriculum step.
+        Needed for DAPO.
+        """
+        k = k if k is not None else self.resample_size
+        base = self._draw_group_indices(k)  
+        repeated = [idx for idx in base for _ in range(self.mini_repeat_count)]
+        return repeated
 
 class CurriculumGRPOTrainer(GRPOTrainer):
     def __init__(self, num_tasks=4, total_iterations=1200, data_schedule='balanced', scheduler_params: dict=None, *args, **kwargs):
@@ -195,23 +220,345 @@ class CurriculumGRPOTrainer(GRPOTrainer):
         # Reset variance regularized state once at initialization
         if self.data_schedule == 'vrex':
             reset_variance_regularized_state()
+        self.max_dapo_iter = 0
+        self._last_batch_rewards = None
+        self._task_sampler = None
+        self._compute_loss_log = {}
         super().__init__(*args, **kwargs)
 
+    def _check_if_adv_zero(self):
+        # Check if advantage is zero to enable DAPO sampling
+        if not self._last_batch_rewards: return False
+        r = np.array(self._last_batch_rewards)
+        rewards_per_prompts = r.reshape(-1, self.num_generations)
+        print('Rewards per prompts:', rewards_per_prompts)
+        eps = 1e-6
+        zero_adv = np.std(rewards_per_prompts, axis=1, ddof=0) <= eps
+        print(f'Was there Zero ADV? {zero_adv} - {self._task_sampler.current_iteration}')
+        return bool(np.any(zero_adv))
+        
+    
     def _get_train_sampler(self, train_dataset=None):
         # The parent class passes the dataset as an argument, but we use self.train_dataset
 
         # generation_batch_size = self.accelerator.num_processes (num_device) * self.args.per_device_train_batch_size (including num_generation)
         # * self.steps_per_generation (steps_per_generation is mutual exclusive to generation_batch_size)
-        return TaskSampler(self.train_dataset,
+        sampler = TaskSampler(self.train_dataset,
                            num_tasks=self.num_tasks,
                            total_iterations=self.total_iterations,
                            data_schedule=self.data_schedule,
                            scheduler_params=self.scheduler_params,
                            batch_size=self.args.generation_batch_size * self.args.gradient_accumulation_steps // self.num_generations,
                            mini_repeat_count=self.num_generations,
-                           repeat_count=self.num_iterations, # * self.args.steps_per_generation, #num_iterations=1 is a GRPO param.
+                           repeat_count=self.num_iterations,
+                           resample_size=self.args.generation_batch_size // (self.accelerator.num_processes * self.num_generations),# * self.args.steps_per_generation, #num_iterations=1 is a GRPO param.
                            trainer=self)
+        self._task_sampler = sampler
+        return sampler
+    
+    def _generate_and_score_completions(
+        self, inputs: list[dict[str, Union[torch.Tensor, Any]]]
+    ) -> dict[str, Union[torch.Tensor, Any]]:
+        device = self.accelerator.device
+        mode = "train" if self.model.training else "eval"
 
+        prompts = [x["prompt"] for x in inputs]
+        prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
+        prompt_inputs = self.processing_class(
+            text=prompts_text, return_tensors="pt", padding=True, padding_side="left", add_special_tokens=False
+        )
+        prompt_inputs = super(GRPOTrainer, self)._prepare_inputs(prompt_inputs)
+        prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
+
+        if self.max_prompt_length is not None:
+            # If max_prompt_length is set, we trim the prompt to keep only the last `max_prompt_length` tokens.
+            # Then we decode those tokens back into text. We manually remove leading pad tokens from the decoded text,
+            # because we can't use `skip_special_tokens=True` (some special tokens are still needed for generation).
+            prompt_ids = prompt_ids[:, -self.max_prompt_length :]
+            prompt_mask = prompt_mask[:, -self.max_prompt_length :]
+            prompts_text = self.processing_class.batch_decode(
+                prompt_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False
+            )
+            prompts_text = [
+                re.sub(rf"^({re.escape(self.processing_class.pad_token)})+", "", text) for text in prompts_text
+            ]
+
+        # Generate completions using either vLLM or regular generation
+        if self.use_vllm:
+            # First, update the vLLM weights if needed
+            if self.state.global_step != self._last_loaded_step:
+                self._move_model_to_vllm()
+                self._last_loaded_step = self.state.global_step
+
+            # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
+            if self.vllm_mode == "server":
+                all_prompts_text = gather_object(prompts_text)
+                if self.accelerator.is_main_process:
+                    # Since 'prompts' contains 'num_generations' duplicates, we first take unique prompts, and generate
+                    # num_generations outputs for each one. This is faster than generating outputs for each duplicate
+                    # prompt individually.
+                    ordered_set_of_prompts = all_prompts_text[:: self.num_generations]
+                    with profiling_context(self, "vLLM.generate"):
+                        completion_ids = self.vllm_client.generate(
+                            prompts=ordered_set_of_prompts,
+                            n=self.num_generations,
+                            repetition_penalty=self.repetition_penalty,
+                            temperature=self.temperature,
+                            top_p=self.top_p,
+                            top_k=-1 if self.top_k is None else self.top_k,
+                            min_p=0.0 if self.min_p is None else self.min_p,
+                            max_tokens=self.max_completion_length,
+                            guided_decoding_regex=self.guided_decoding_regex,
+                            generation_kwargs=self.args.generation_kwargs,
+                        )
+                else:
+                    completion_ids = [None] * len(all_prompts_text)
+                # Broadcast the completions from the main process to all processes, ensuring each process receives its
+                # corresponding slice.
+                completion_ids = broadcast_object_list(completion_ids, from_process=0)
+                process_slice = slice(
+                    self.accelerator.process_index * len(prompts),
+                    (self.accelerator.process_index + 1) * len(prompts),
+                )
+                completion_ids = completion_ids[process_slice]
+
+            # Generate completions using colocated vLLM instances: each device holds vLLM copy and work on their own batch of prompts
+            elif self.vllm_mode == "colocate":
+                if self.guided_decoding_regex:
+                    guided_decoding = GuidedDecodingParams(backend="outlines", regex=self.guided_decoding_regex)
+                else:
+                    guided_decoding = None
+
+                generation_kwargs = {
+                    "n": 1,  # vLLM on each GPU generates only 1 in colocate mode
+                    "repetition_penalty": self.repetition_penalty,
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "top_k": -1 if self.top_k is None else self.top_k,
+                    "min_p": 0.0 if self.min_p is None else self.min_p,
+                    "max_tokens": self.max_completion_length,
+                    "guided_decoding": guided_decoding,
+                }
+                if self.args.generation_kwargs is not None:
+                    generation_kwargs.update(self.args.generation_kwargs)
+                sampling_params = SamplingParams(**generation_kwargs)
+
+                if self.vllm_tensor_parallel_size > 1:
+                    # Gather prompts from all ranks in the TP group and flatten.
+                    # Each rank starts with its own prompts; after gathering, all ranks see the full group set.
+                    orig_size = len(prompts_text)
+                    gathered_prompts = [None for _ in range(self.vllm_tensor_parallel_size)]
+                    torch.distributed.all_gather_object(gathered_prompts, prompts_text, group=self.tp_group)
+                    all_prompts_text = [p for sublist in gathered_prompts for p in sublist]
+                else:
+                    all_prompts_text = prompts_text
+
+                with profiling_context(self, "vLLM.generate"):
+                    all_outputs = self.llm.generate(all_prompts_text, sampling_params=sampling_params, use_tqdm=False)
+
+                completion_ids = [output.token_ids for outputs in all_outputs for output in outputs.outputs]
+
+                if self.vllm_tensor_parallel_size > 1:
+                    # Slice completions for this rank within its TP group.
+                    # Each rank generates all outputs — we keep only our share.
+                    local_rank_in_group = torch.distributed.get_rank(group=self.tp_group)
+                    tp_slice = slice(local_rank_in_group * orig_size, (local_rank_in_group + 1) * orig_size)
+                    completion_ids = completion_ids[tp_slice]
+
+            # Pad the completions, and concatenate them with the prompts
+            completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
+            completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
+            prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
+        else:
+            # Regular generation path
+            with unwrap_model_for_generation(
+                self.model_wrapped, self.accelerator, gather_deepspeed3_params=self.args.ds3_gather_for_generation
+            ) as unwrapped_model:
+                with (
+                    FSDP.summon_full_params(self.model_wrapped, recurse=False)
+                    if self.is_fsdp_enabled
+                    else nullcontext()
+                ):
+                    prompt_completion_ids = unwrapped_model.generate(
+                        prompt_ids, attention_mask=prompt_mask, generation_config=self.generation_config
+                    )
+
+            # Compute prompt length and extract completion ids
+            prompt_length = prompt_ids.size(1)
+            prompt_ids = prompt_completion_ids[:, :prompt_length]
+            completion_ids = prompt_completion_ids[:, prompt_length:]
+
+        # Mask everything after the first EOS token
+        is_eos = completion_ids == self.processing_class.eos_token_id
+        eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
+        eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
+        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
+        completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
+
+        # Convert tensor to a list of lists of token IDs. This will be passed to the reward function, avoiding the need
+        # to re-tokenize completions if the reward is computed from tokens.
+        completion_ids_list = [
+            [id.item() for id, m in zip(row, mask_row) if m] for row, mask_row in zip(completion_ids, completion_mask)
+        ]
+
+        #############################################################################
+        # Moved From Line 393
+        #############################################################################
+        # Decode the generated completions
+        completions_text = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
+        if is_conversational(inputs[0]):
+            completions = []
+            for prompt, completion in zip(prompts, completions_text):
+                bootstrap = prompt.pop()["content"] if prompt[-1]["role"] == "assistant" else ""
+                completions.append([{"role": "assistant", "content": bootstrap + completion}])
+        else:
+            completions = completions_text
+
+        # Calculate rewards for each reward function. rewards_per_func aggregates rewards across all processes. This is
+        # important because rewards will be normalized per group, and completions are distributed. We will later slice
+        # rewards_per_func to extract each process's subset.
+        rewards_per_func = self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+
+        # Apply weights to each reward function's output and sum
+        rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
+
+        # Compute grouped-wise rewards
+        mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
+        std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1)
+        is_std_zero = torch.isclose(std_grouped_rewards, torch.zeros_like(std_grouped_rewards))
+
+        # Normalize the rewards to compute the advantages
+        mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
+        std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
+        advantages = rewards - mean_grouped_rewards
+        if self.scale_rewards:
+            advantages = advantages / (std_grouped_rewards + 1e-4)
+        #############################################################################
+        # Moved From Line 393
+        #############################################################################
+
+        #############################################################################
+        # Added
+        #############################################################################
+        if mode == "train" and is_std_zero.any():
+            current_dapo_iter = getattr(self, "current_dapo_iter", 0)
+            max_dapo_iter = self.scheduler_params.max_dapo_iter
+            if current_dapo_iter < max_dapo_iter:
+                print(f"Dynamic Sampling (iter {current_dapo_iter+1}/{max_dapo_iter}): Found {is_std_zero.sum().item()}/{len(is_std_zero)} groups with zero std. Resampling batch...")
+                self.current_dapo_iter = current_dapo_iter + 1
+                resampled_indices = self._task_sampler.resample()
+                resampled_inputs = [self.train_dataset[int(idx)] for idx in resampled_indices]
+                # TODO: Resample (self.args.generation_batch_size // self.num_generations) New prompts.
+                # TODO: Inputs will be a list of size 16. (2 new prompts, repeated 8 times).
+                # TODO: Make resample func in sampler that directly gives these prompts
+                result = self._generate_and_score_completions(resampled_inputs)
+                self.current_dapo_iter = 0
+                return result
+            else:
+                print(f"Dynamic Sampling: Max iterations ({max_dapo_iter}) reached.")
+                self.current_dapo_iter = 0
+        print(f"Dynamic Sampling: Found {is_std_zero.sum().item()}/{len(is_std_zero)} groups with zero std. Proceeding with batch...")
+        #############################################################################
+        # Added
+        #############################################################################
+
+        # Sum along sequence dimension (dim=1) to get completion length per sequence, used for logging
+        completion_lengths = completion_mask.sum(1)
+
+        # If mask_truncated_completions is enabled, zero out truncated completions in completion_mask
+        if self.mask_truncated_completions:
+            truncated_completions = ~is_eos.any(dim=1)
+            completion_mask = completion_mask * (~truncated_completions).unsqueeze(1).int()
+
+        # Concatenate prompt_mask with completion_mask for logit computation
+        attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B, P+C)
+
+        logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
+        batch_size = self.args.per_device_train_batch_size if mode == "train" else self.args.per_device_eval_batch_size
+
+        with torch.no_grad():
+            # When using num_iterations == 1 and steps_per_generation <= gradient_accumulation_steps
+            # old_per_token_logps == per_token_logps, so we can skip it's computation here, and use
+            # per_token_logps.detach() instead.
+            if self.num_iterations > 1 or self.args.steps_per_generation > self.args.gradient_accumulation_steps:
+                old_per_token_logps = self._get_per_token_logps(
+                    self.model, prompt_completion_ids, attention_mask, logits_to_keep, batch_size
+                )
+            else:
+                old_per_token_logps = None
+
+            # Compute the per-token log probabilities for the reference model
+            if self.beta != 0.0:
+                if self.ref_model is not None:
+                    ref_per_token_logps = self._get_per_token_logps(
+                        self.ref_model, prompt_completion_ids, attention_mask, logits_to_keep
+                    )
+                else:
+                    with self.accelerator.unwrap_model(self.model).disable_adapter():
+                        ref_per_token_logps = self._get_per_token_logps(
+                            self.model, prompt_completion_ids, attention_mask, logits_to_keep
+                        )
+            else:
+                ref_per_token_logps = None
+
+        # Slice to keep only the local part of the data
+        process_slice = slice(
+            self.accelerator.process_index * len(prompts),
+            (self.accelerator.process_index + 1) * len(prompts),
+        )
+        all_process_advantages = advantages.clone()  # keep the aggregated advantages for logging
+        advantages = advantages[process_slice]
+
+        # Log the metrics
+        if mode == "train":
+            self.state.num_input_tokens_seen += self.accelerator.gather(attention_mask.sum()).sum().item()
+        self._metrics[mode]["num_tokens"] = [self.state.num_input_tokens_seen]
+
+        # Log completion lengths, mean, min, max
+        agg_completion_lengths = self.accelerator.gather(completion_lengths)
+        self._metrics[mode]["completions/mean_length"].append(agg_completion_lengths.float().mean().item())
+        self._metrics[mode]["completions/min_length"].append(agg_completion_lengths.float().min().item())
+        self._metrics[mode]["completions/max_length"].append(agg_completion_lengths.float().max().item())
+
+        # Identify sequences that terminated with EOS and log their lengths
+        agg_terminated_with_eos = self.accelerator.gather(is_eos.any(dim=1))
+        term_completion_lengths = agg_completion_lengths[agg_terminated_with_eos]
+        clipped_completions_ratio = 1 - len(term_completion_lengths) / len(agg_completion_lengths)
+        self._metrics[mode]["completions/clipped_ratio"].append(clipped_completions_ratio)
+        if len(term_completion_lengths) == 0:  # edge case where no terminated sequences are found
+            term_completion_lengths = torch.zeros(1, device=device)
+        self._metrics[mode]["completions/mean_terminated_length"].append(term_completion_lengths.float().mean().item())
+        self._metrics[mode]["completions/min_terminated_length"].append(term_completion_lengths.float().min().item())
+        self._metrics[mode]["completions/max_terminated_length"].append(term_completion_lengths.float().max().item())
+
+        # Calculate mean reward per function, but only for samples where the function was applied (non-NaN values)
+        for i, reward_func_name in enumerate(self.reward_func_names):
+            mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
+            self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
+            std_rewards = nanstd(rewards_per_func[:, i]).item()
+            self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_rewards)
+        self._metrics[mode]["reward"].append(mean_grouped_rewards.mean().item())
+        self._metrics[mode]["reward_std"].append(std_grouped_rewards.mean().item())
+        self._metrics[mode]["frac_reward_zero_std"].append(is_std_zero.float().mean().item())
+
+        # Log prompt and completion texts
+        self._textual_logs["prompt"].extend(gather_object(prompts_text))
+        self._textual_logs["completion"].extend(gather_object(completions_text))
+        for i, name in enumerate(self.reward_func_names):
+            self._textual_logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
+        self._textual_logs["advantages"].extend(all_process_advantages.tolist())
+
+        return {
+            "prompt_ids": prompt_ids,
+            "prompt_mask": prompt_mask,
+            "completion_ids": completion_ids,
+            "completion_mask": completion_mask,
+            "advantages": advantages,
+            "old_per_token_logps": old_per_token_logps,
+            "ref_per_token_logps": ref_per_token_logps,
+        }
+    
+    
     def training_step(self, model, inputs, num_items_in_batch=None):
         # Extract task IDs from the batch before processing
         if 'task' in inputs[0]:
@@ -242,7 +589,6 @@ class CurriculumGRPOTrainer(GRPOTrainer):
                     print(f"[VREx ERROR] Failed to log stored metrics: {e}")
             
             # Clean up
-            delattr(self, '_last_batch_rewards')
             delattr(self, '_current_batch_task_ids')
         
         return result
@@ -381,10 +727,13 @@ class BaseTrainer:
             "beta": training_cfg.beta,
             # Vllm
             "use_vllm": training_cfg.use_vllm,
-            "vllm_mode": training_cfg.vllm_mode,  # Add missing vllm_mode parameter
+            "vllm_mode": training_cfg.vllm_mode,
+            "vllm_tensor_parallel_size": 1,
+            # "vllm_server_port": 12110,# Add missing vllm_mode parameter
             "vllm_gpu_memory_utilization": training_cfg.vllm_gpu_memory_utilization,
         }
-
+        if training_cfg.vllm_mode == 'server':
+            grpo_args["vllm_server_port"] = training_cfg.vllm_server_port
         # Combine common and GRPO specific args
         training_args = GRPOConfig(**common_args, **grpo_args)
 
@@ -416,41 +765,51 @@ class BaseTrainer:
 
 class BlocksWorldTrainer(BaseTrainer):
     """Class for training and inference on blocksworld models"""
+    
+    def _prepare_icl(self):
+        icl_examples = [
+            {
+            "init": "\n\n[Problem]\nHere is the initial state of the blocks: the red block is clear, the orange block is clear, the hand is empty, the red block is on top of the yellow block, the yellow block is on top of the blue block, the blue block is on the table and the orange block is on the table",
+            "goal": "\n\nHere is the goal state of the blocks: the red block is on top of the blue block and the yellow block is on top of the orange block",
+            "think": "\n\n<think> To achieve the goal state I need move the red block and yellow block since they are in different positions in the goal </think> ",
+            "plan": "\n\n<answer>\nunstack the red block from on top of the yellow block\nput down the red block\nunstack the yellow block from on top of the blue block\nstack the yellow block on top of the orange block\npick up the red block\nstack the red block on top of the blue block\n</answer>"
+        },
+        {
+            "init": "\n\n[Problem]\nHere is the initial state of the blocks: the red block is clear, the orange block is clear, the hand is empty, the orange block is on top of the blue block, the red block is on the table and the blue block is on the table",
+            "goal": "\n\nHere is the goal state of the blocks: the red block is on top of the blue block",
+            "think": "\n\n<think> To achieve the goal state I need move the red block and orange block since they are in different positions in the goal </think> ",
+            "plan": "\n\n<answer>\nunstack the orange block from on top of the blue block\nput down the orange block\npick up the red block\nstack the red block on top of the blue block\n</answer>"
+        }
+        ]
+        return "\n\n".join(
+            ex["init"] + ex["goal"] + ex["think"] + ex["plan"]
+            for ex in icl_examples
+        )
 
-    def _prepare_dataset(self):
+    def _prepare_dataset(self, split='train'):
         """Prepare dataset for training"""
         # If a dataset size limit is specified, sample equally from each file
         all_samples = []
-        data_files = self.cfg.task.data_files
+        try:
+            data_files = getattr(self.cfg.task, split).data_files
+        except (AttributeError, KeyError):
+            data_files = self.cfg.task.data_files
         data_schedule = self.cfg.algorithm.training.curriculum_schedule
         for task_idx, file in enumerate(data_files):
             file_dataset = load_dataset('json', data_files=file)['train']
-            file_dataset = file_dataset.shuffle(seed=self.cfg.experiment.dataset_seed)
+            # file_dataset = file_dataset.shuffle(seed=self.cfg.experiment.dataset_seed)
             
-            # if self.cfg.experiment.dataset_size > 0 and data_schedule == 'fixed':
-            #     num_files = len(data_files)
-            #     samples_per_file = self.cfg.experiment.dataset_size // num_files
-            #     num_samples = min(len(file_dataset), samples_per_file)
-            #     file_dataset = file_dataset.select(range(num_samples))
-            
-            # Annotate with difficulty
             task_annotations = [task_idx] * len(file_dataset)
             file_dataset = file_dataset.add_column("task", task_annotations)
             
             all_samples.extend(file_dataset)
         dataset = Dataset.from_list(all_samples)
-
-        dataset = dataset.shuffle(seed=self.cfg.experiment.dataset_seed)
         print(f"Dataset prepared with {len(dataset)} samples")
         return dataset
 
     def _generate_prompt(self, tokenizer, init, goal, plan="", example_index=0, icl_examples_set=None):
         """Generate prompt for the blocksworld model"""
-        if icl_examples_set is None:
-            icl_example = ""
-        else:
-            icl_example = generate_icl(icl_examples_set, provide_think_icl=True, num_icl=1, idx=example_index)
-
+        icl_example = ""
         messages = [
             {
                 "role": "system",
@@ -520,14 +879,20 @@ class BlocksWorldTrainer(BaseTrainer):
     def _blocksworld_reward_fn(self, completions, plan, init, goal, **kwargs):
         """Reward function for blocksworld task"""
         rewards = []
+        rewards_dict = {}
+        idx = 0
         for completion, plan_i, init_i, goal_i in zip(completions, plan, init, goal):
             reward_format = 0.0
+            if not f'{init_i}_{goal_i}' in rewards_dict:
+                rewards_dict[f'{init_i}_{goal_i}'] = [idx]
+            else:
+                rewards_dict[f'{init_i}_{goal_i}'].append(idx)
+            idx +=1
             try:
                 print('#########################')
                 completion = "<think>" + completion
-                print(completion)
 
-                if not self._validate_bw_response_format(completion):
+                if not self._validate_bw_response_format(completion) and self.cfg.mode == 'train':
                     print('Response Format Error')
                     rewards.append(0.0)  # Penalty to avoid format errors
                     continue
@@ -559,14 +924,9 @@ class BlocksWorldTrainer(BaseTrainer):
             except Exception as e:
                 print(e)
                 rewards.append(0.0)
-
-        # Update variance regularized scheduler if we're in training mode
-        # and task IDs are available
-        if hasattr(self, 'trainer') and hasattr(self.trainer, 'data_schedule'):
-            if self.trainer.data_schedule == 'vrex':
-                # Store rewards in trainer for later use
-                self.trainer._last_batch_rewards = rewards
-
+        print('Rewards Dict:', rewards_dict)
+        if hasattr(self, 'trainer'):
+            self.trainer._last_batch_rewards = rewards
         return rewards
 
     def train(self):
@@ -597,7 +957,7 @@ class BlocksWorldTrainer(BaseTrainer):
             tokenizer.pad_token_id = tokenizer.eos_token_id
 
         model = AutoModelForCausalLM.from_pretrained(
-            model_path,
+            model_config.model_name_or_path,
             torch_dtype=model_config.torch_dtype,
             trust_remote_code=model_config.trust_remote_code,
             attn_implementation=model_config.attn_implementation
@@ -619,10 +979,15 @@ class BlocksWorldTrainer(BaseTrainer):
         )
 
         # Split dataset
-        train_test_split = dataset.train_test_split(test_size=self.cfg.experiment.test_size)
+        train_test_split = dataset.train_test_split(
+            test_size=self.cfg.experiment.test_size,
+            seed=self.cfg.experiment.dataset_seed,
+            shuffle=True,
+        )
         train_dataset = train_test_split["train"]
+        train_dataset = train_dataset.map(lambda ex, idx: {"_row_id": int(idx)}, with_indices=True)
         test_dataset = train_test_split["test"]
-
+        test_dataset = test_dataset.map(lambda ex, idx: {"_row_id": int(idx)}, with_indices=True)
         # Setup training arguments based on algorithm
         if 'grpo' in algorithm:
             training_args = self._setup_grpo_training()
@@ -639,7 +1004,6 @@ class BlocksWorldTrainer(BaseTrainer):
                 data_schedule=self.cfg.algorithm.training.curriculum_schedule,
                 scheduler_params=self.cfg.algorithm.training.scheduler_params,
             )
-            # Store trainer reference for reward function access
             self.trainer = trainer
 
         elif algorithm == "ppo":
@@ -665,165 +1029,147 @@ class BlocksWorldTrainer(BaseTrainer):
         if self.cfg.algorithm.training.push_to_hub:
             trainer.push_to_hub(dataset_name='blocksworld-dataset')
 
-    def _train_ppo(self, trainer, dataset, tokenizer):
-        """Custom training loop for PPO"""
-        print("Starting PPO training loop for BlocksWorld task")
-
-        # Use smaller subset during PPO training due to computational constraints
-        if len(dataset) > 100:
-            train_dataset = dataset.select(range(100))
-        else:
-            train_dataset = dataset
-
-        for epoch in range(self.cfg.algorithm.training.max_steps):
-            print(f"PPO Epoch {epoch}/{self.cfg.algorithm.training.max_steps}")
-
-            # Sample batch of prompts
-            # Sample batch of prompts - use the per_device_train_batch_size as batch size
-            batch_indices = random.sample(range(len(train_dataset)),
-                                          min(self.cfg.algorithm.training.per_device_train_batch_size,
-                                              len(train_dataset)))
-            batch = [train_dataset[i] for i in batch_indices]
-
-            # Prepare inputs
-            query_tensors = []
-            for item in batch:
-                input_ids = tokenizer(item["prompt"], return_tensors="pt").input_ids
-                if hasattr(trainer, "accelerator"):
-                    input_ids = input_ids.to(trainer.accelerator.device)
-                query_tensors.append(input_ids)
-
-            # Generate model responses
-            response_tensors = []
-            for query in query_tensors:
-                response = trainer.generate(
-                    query,
-                    max_new_tokens=self.cfg.task.training.max_completion_length,
-                    do_sample=True,
-                    temperature=0.7
-                )
-                response_tensors.append(response)
-
-            # Compute rewards
-            rewards = []
-            for i, (response, item) in enumerate(zip(response_tensors, batch)):
-                # Decode the response
-                response_text = tokenizer.decode(response[0], skip_special_tokens=True)
-
-                # Extract the completion part (after "<think>")
-                if "<think>" in response_text:
-                    completion = response_text.split("<think>")[1]
-                else:
-                    completion = response_text
-
-                # Compute reward using the blocksworld reward function
-                reward = self._blocksworld_reward_fn(
-                    [completion],
-                    [item["plan"]],
-                    [item["init"]],
-                    [item["goal"]]
-                )[0]
-
-                rewards.append(reward)
-                print(f"Sample {i}, Reward: {reward}")
-
-            # Convert rewards to tensors
-            reward_tensors = [torch.tensor(reward) for reward in rewards]
-
-            # Perform PPO update
-            stats = trainer.step(query_tensors, response_tensors, reward_tensors)
-
-            # Log training progress
-            if epoch % self.cfg.algorithm.training.logging_steps == 0:
-                print(f"Epoch {epoch}: {stats}")
-
-                # Save checkpoint
-                if epoch % self.cfg.algorithm.training.save_steps == 0:
-                    trainer.save_pretrained(f"{trainer.args.output_dir}/checkpoint-{epoch}")
-
+    def sanitize_name(self, raw: str) -> str:
+        if not isinstance(raw, str):
+            return raw
+        return ''.join(c if c.isalnum() else '_' for c in raw).strip('_')
+    
     def inference(self):
         """Run inference using the trained model"""
         # Extract config values
+        """Run inference using the trained model"""
+        log_on_main('\n\n*****\ntest\n*****\n\n')
+
         model_checkpoint = self.cfg.task.inference.checkpoint
-        steps = self.cfg.task.inference.steps
-        temperature = self.cfg.task.inference.temperature
         sc_num = self.cfg.task.inference.sc_num
-        pass_at_k = self.cfg.task.inference.pass_at_k
-        use_icl = self.cfg.task.inference.use_icl
-        prompt_path = self.cfg.task.inference.prompt_path
-        resume = self.cfg.task.inference.resume
-        mode = 'pass' if pass_at_k == 1 else 'majority'
+        sanitized_name = self.sanitize_name(model_checkpoint)
         # Generate checkpoint path
-        model_dir = self._get_checkpoint_path(model_checkpoint)
-        max_batch_size = self.cfg.algorithm.inference.max_batch_size
-        # Setup data path
-        data_path = self.cfg.task.inference.data_path.format(steps=steps)
+        model_dir = self._get_checkpoint_path(model_checkpoint, self.cfg.model.trim)
 
-        # Setup log directory
-        model_name = model_dir.split('/')[-1]
-        log_dir = f'logs/Blocksworld/RL/step_{steps}/{datetime.now().strftime("%m%d%Y-%H%M%S")}_{model_name}_t_{temperature}_sc_{sc_num}'
-
-        # Load prompt
-        with open(prompt_path) as f:
-            prompt = json.load(f)
-
-        # Prepare ICL examples if needed
-        icl = ""
-        if use_icl:
-            with open(self.cfg.task.icl_examples_file) as f:
-                icl_examples = json.load(f)
-            icl = generate_icl(icl_examples, provide_think_icl=True, num_icl=self.cfg.task.inference.icl_num)
-        print(f"ICL examples: {icl}")
-
-        # Load model
-        base_model = HFModel(
-            model_pth=model_dir,
-            tokenizer_pth=model_dir,
-            max_new_tokens=self.cfg.task.inference.max_new_tokens,
-            max_batch_size=max_batch_size
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_dir,
+            trust_remote_code=self.cfg.model.trust_remote_code,
         )
-
-        # Create reasoner
-        reasoner = RLReasoner(
-            base_model,
-            temperature=temperature,
-            sc_num=sc_num,
-            icl_example=icl,
-            pass_at_k=pass_at_k,
+        model = LLM(
+            model=model_dir,
+            trust_remote_code=self.cfg.model.trust_remote_code,
+            tensor_parallel_size=torch.cuda.device_count(),
+            dtype=self.cfg.model.torch_dtype,
+            gpu_memory_utilization=0.75,
+            max_model_len=self.cfg.task.inference.max_model_len,
+            seed=self.cfg.experiment.dataset_seed,
+            task='generate'
         )
-
-        # Setup evaluator
-        evaluator = BWEvaluator(
-            config_file=self.cfg.task.inference.config_file,
-            domain_file=self.cfg.task.inference.domain_file,
-            data_path=data_path,
-            init_prompt=prompt,
-            disable_log=False,
-            output_extractor=lambda x: sc_output_extractor(x, mode=mode),
-            mode=mode,
-            sample_prompt_type="rap"  # rap prompt includes cot
+        sampling_params = SamplingParams(
+            n=1,
+            temperature=self.cfg.task.inference.temperature,
+            max_tokens=self.cfg.task.inference.max_new_tokens,
+            min_tokens=1,
+            seed=self.cfg.experiment.dataset_seed,
+            skip_special_tokens=False,
+            top_p=0.9,
+            top_k=50
         )
+        
+        # Load and Preprocess Dataset  
+        dataset = self._prepare_dataset(split='inference')
+        dataset = dataset.map(
+            lambda example, idx: self._generate_prompt(
+                tokenizer,
+                example["init"],
+                example["goal"],
+                example["plan"],
+                idx
+            ),
+            with_indices=True
+        )
+        # log_on_main(dataset)
+        # VLLM Generation
+        op_list = []
+        for _ in tqdm(range(1), desc="Generating 256 batches"):
+            outputs = model.generate(dataset['prompt'], sampling_params)
+            op_list.append(outputs)
+        # outputs = model.generate(dataset['prompt'], sampling_params)
+        outputs = [
+            [completion.text for req in batches for completion in req.outputs] 
+            for batches in op_list
+            
+        ]
+        outputs = np.array(outputs).T.tolist()
+        dataset = dataset.select([idx for idx in range(len(dataset['prompt']))])
+        dataset = dataset.add_column('output', outputs)
 
-        # Run evaluation
-        accuracy = evaluator.batched_evaluate(reasoner, shuffle_prompt=True, num_shot=4, resume=resume, log_dir=log_dir, batch_size=max_batch_size)
+        # Calcuate Rewards
+        reward_fn = self._blocksworld_reward_fn
 
-        print(f'Accuracy: {accuracy}')
+        rewards = [
+                self._blocksworld_reward_fn(
+                    completions=outs,                    # List[str] of length n
+                    plan=[dataset['plan'][i]] * len(outs),
+                    init=[dataset['init'][i]] * len(outs),
+                    goal=[dataset['goal'][i]] * len(outs),
+                )
+                for i, outs in enumerate(outputs)
+            ]
+        # print(rewards, len(rewards))
+        dataset = dataset.add_column('reward', rewards)
+        dataset.to_json(os.path.join(str(self.output_dir), f'{sanitized_name}_outputs_bw.jsonl'))
 
-        # Save results to output directory
-        results = {
-            "accuracy": accuracy,
-            "model_checkpoint": model_checkpoint,
-            "steps": steps,
-            "temperature": temperature,
-            "sc_num": sc_num,
-            "use_icl": use_icl,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Process Metrics
+        results = dict()
+        num_prompts = len(rewards)
+        n = len(rewards[0])
+        results['overall'] = {
+            'avg_reward': (
+                sum(sum(row) for row in rewards)
+                / (num_prompts * n)
+            ) if num_prompts * n else 0.0,
+
+            # pass@n: fraction of rows where any reward > 2.0
+            f'pass@{n}': (
+                sum(any(r > 2.0 for r in row) for row in rewards)
+                / num_prompts
+            ) if num_prompts else 0.0,
+
+            'support': num_prompts
         }
+        data_files = getattr(self.cfg.task, 'inference').data_files
+        for task_idx, data_dir in enumerate(data_files):
+            basename = os.path.basename(os.path.normpath(data_dir))
+            rewards_list = [
+                ex['reward']
+                for ex in dataset
+                if ex['task'] == task_idx
+            ]
+            support = len(rewards_list)
+            print('len of rewards', support)
+            total_sum = sum(sum(grp) for grp in rewards_list)
+            avg_reward = (total_sum / (support * n)) if num_prompts else 0.0
+            # compute avg and pass@1 (accuracy) with comprehensions
+            
+            max_pow   = int(math.log2(n)) if n else 0
+            pass_curve = {
+                1 << i: (
+                    sum(any(r > 2.0 for r in grp[: (1 << i)]) for grp in rewards_list)
+                    / support
+                ) if support else 0.0
+                for i in range(max_pow + 1)
+            }
+            
 
-        with open(self.output_dir / "inference_results.json", "w") as f:
-            json.dump(results, f, indent=2)
+            results[basename] = {
+                'avg_reward': avg_reward,
+                'pass_curve':   pass_curve,
+                f'pass@{n}':  pass_curve.get(n, 0.0),
+                'support':    support,
+            }
 
-        return accuracy
+        log_on_main(json.dumps(results, indent=4))
+        with open(os.path.join(str(self.output_dir), f'{sanitized_name}.json'), "w") as f:
+            json.dump(results, f, indent=4)
+
+        if torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
 
 
 class CountdownTrainer(BaseTrainer):
@@ -1139,14 +1485,6 @@ class CountdownTrainer(BaseTrainer):
             for i in range(len(prompt_list)):
                 outputs.append([out.text for out in output[i].outputs])
             print(outputs)
-            # print(outputs) # Qwen2.5-1.5B-Instruct_countdown2345_grpo_gaussian_0.25_0.75_True_1200
-            # for _ in range(num_generations):
-            #     outputs.append(model.generate(prompt_list, do_sample=True, temperature=self.cfg.task.inference.temperature, verbose=False, skip_special_tokens=False).text)
-            # if num_generations > 1:
-            #     # outputs = list(zip(*outputs)) # For old generation code
-            #     pass
-            # else:
-            #     outputs = outputs[0]
 
             if pass_at_k > 1:
                 for k_outputs, numbers, target, prompt in zip(outputs, numbers_list, target_list, prompt_list):
@@ -1392,7 +1730,8 @@ class ArithmeticTrainer(BaseTrainer):
                     print('Response Format Error')
                     rewards.append(0.0)  # Penalty to avoid format errors
                     continue
-                accuracy_reward = process_result_v1(answer_i, completion, ans_extract)
+                llm_generate_ans = ans_extract(completion)
+                accuracy_reward = process_result_v1(llm_generate_ans, answer_i)
                 rewards.append(accuracy_reward)
                 log_on_main('-----')
                 log_on_main(accuracy_reward)
@@ -1484,6 +1823,11 @@ class ArithmeticTrainer(BaseTrainer):
             model_config.model_name_or_path,
             trust_remote_code=model_config.trust_remote_code
         )
+        # Ensure we have a pad_token
+        if tokenizer.pad_token is None:
+            # Option A: alias EOS → PAD
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
         model = AutoModelForCausalLM.from_pretrained(
             model_config.model_name_or_path,
             torch_dtype=model_config.torch_dtype,
@@ -1501,10 +1845,9 @@ class ArithmeticTrainer(BaseTrainer):
         # Setup training arguments based on algorithm
         if "grpo" in algorithm:
             training_args = self._setup_grpo_training()
-            batch_size = int(training_args.gradient_accumulation_steps * training_args.per_device_train_batch_size)
             # GRPO doesn't train more than an epoch. Except for epoch override, when learning hard task or maybe?
-            print(f'Setting Correct Max Steps - {training_args.max_steps} - {len(dataset)//batch_size}')
-            training_args.max_steps = min(training_args.max_steps, len(dataset)//batch_size)
+            # print(f'Setting Correct Max Steps - {training_args.max_steps} - {len(dataset)//batch_size}')
+            training_args.max_steps = training_args.max_steps #min(training_args.max_steps, len(dataset)//batch_size)
             trainer = CurriculumGRPOTrainer(
                 model=model,
                 reward_funcs=arithmetic_reward_fn,
@@ -1517,8 +1860,6 @@ class ArithmeticTrainer(BaseTrainer):
                 data_schedule=self.cfg.algorithm.training.curriculum_schedule,
                 scheduler_params=self.cfg.algorithm.training.scheduler_params,
             )
-            # Store trainer reference for reward function access
-            self.trainer = trainer
         elif algorithm == "ppo":
             training_args = self._setup_ppo_training()
             trainer = PPOTrainer(
@@ -1602,8 +1943,6 @@ class ArithmeticTrainer(BaseTrainer):
             for request_output in outputs
             for completion_output in request_output.outputs
         ]
-        # print(outputs)
-        # quit()
         dataset = dataset.select([idx for idx in range(len(dataset['prompt'])) for _ in range(self.cfg.task.inference.n)])
         dataset = dataset.add_column('output', outputs)
 

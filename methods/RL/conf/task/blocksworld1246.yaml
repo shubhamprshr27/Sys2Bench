@@ -13,7 +13,13 @@ training:
   max_completion_length: 512
 
 inference:
-  checkpoint: 1200
+  checkpoint: '/home/shubhamprshr/e2h_big/outputs/Qwen2.5-1.5B-Instruct_blocksworld1246_grpo_gaussian_0.25_0.75_SEC0.3DRO1.0G0.0_minpTrue_1200/checkpoint-1200/'
+  data_files:
+    - data/blocksworld/split_v1/step_1_data-test.json
+    - data/blocksworld/split_v1/step_2_data-test.json
+    - data/blocksworld/split_v1/step_4_data-test.json
+    - data/blocksworld/split_v1/step_6_data-test.json
+    - data/blocksworld/split_v1/step_8_data-test.json
   steps: 4
   temperature: 0.0
   sc_num: 1
@@ -28,3 +34,4 @@ inference:
   resume: 0
   max_new_tokens: 512
   max_batch_size: 64
+  max_model_len: 1600

@@ -1,21 +1,21 @@
 name: "math"
+data_files:
+  - data/math/level_1
+  - data/math/level_2
+  - data/math/level_3
+  - data/math/level_4
 
 training:
-  data_files:
-    - datasets/math/level1
-    - datasets/math/level2
-    - datasets/math/level3
-    - datasets/math/level4
   max_prompt_length: 1600
   max_completion_length: 1600
 
 inference:
   data_files:
-    - datasets/math/level1
-    - datasets/math/level2
-    - datasets/math/level3
-    - datasets/math/level4
-    - datasets/math/level5
+    - data/math/level1
+    - data/math/level2
+    - data/math/level3
+    - data/math/level4
+    - data/math/level5
   max_prompt_length: 1600
   max_completion_length: 1600
   temperature: 0.0
